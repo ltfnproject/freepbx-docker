@@ -1,0 +1,1 @@
+# Placeholder agar folder cache/ tetap ada untuk pre-fetched tarball di CI (file *.tgz diabaikan di .gitignore)

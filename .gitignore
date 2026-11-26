@@ -2,6 +2,7 @@
 data/
 db/
 logs/
+cache/*.tgz
 
 # File environment & sementara
 .env

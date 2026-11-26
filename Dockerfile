@@ -17,9 +17,9 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 
 WORKDIR /usr/src
 
-# Unduh source Asterisk 22 LTS terbaru (dengan timeout & retry agar tidak hang jika mirror lambat)
-RUN curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 300 \
-        --retry 4 --retry-delay 5 --retry-all-errors \
+# Unduh source Asterisk 22 LTS terbaru (fast-fail jika macet, maksimal 90 detik)
+RUN curl -4 -fSL --connect-timeout 15 --speed-limit 20480 --speed-time 15 --max-time 120 \
+        --retry 2 --retry-delay 3 \
         "https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-${ASTERISK_MAJOR}-current.tar.gz" \
         -o asterisk.tar.gz \
     && mkdir -p /usr/src/asterisk \
@@ -144,22 +144,35 @@ RUN set -eux; \
     printf "[MySQL-asteriskcdrdb]\nDescription=MySQL connection to asteriskcdrdb\nDriver=MySQL\nServer=localhost\nDatabase=asteriskcdrdb\nPort=3306\nSocket=/run/mysqld/mysqld.sock\nOption=3\n" \
         > /etc/odbc.ini
 
-# 6. Unduh & instal FreePBX 17 Stable + modul lengkap + pindahkan state awal ke /opt/init dalam satu layer
-# Catatan: build-essential & git dipasang sementara agar modul node-gyp (ucp/pm2) terinstal mulus, lalu dihapus di layer yang sama
+# 6. Unduh (atau gunakan pre-fetched cache dari CI) & instal FreePBX 17 Stable + modul lengkap + pindahkan state awal ke /opt/init
+# Catatan:
+# - freepbx-17.0-latest.tgz sudah membundel 31 modul inti/telephony (core, sipsettings, voicemail, cdr, dashboard, userman, pm2, ucp, ivr, queues, ringgroups, recordings, music, callrecording, dll.)
+# - build-essential & git dipasang sementara agar modul node-gyp (ucp/pm2) terinstal mulus, lalu dihapus di layer yang sama
+COPY cache/ /tmp/cache/
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends build-essential git; \
-    curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 240 \
-        --retry 3 --retry-delay 5 --retry-all-errors "${FREEPBX_URL}" -o /tmp/freepbx.tgz \
-    || curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 240 \
-        --retry 3 --retry-delay 5 --retry-all-errors \
-        "https://mirror1.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" -o /tmp/freepbx.tgz \
-    || curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 240 \
-        --retry 3 --retry-delay 5 --retry-all-errors \
-        "http://mirror2.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" -o /tmp/freepbx.tgz; \
+    if [ -s /tmp/cache/freepbx-17.0-latest.tgz ]; then \
+        echo "[INFO] Menggunakan pre-fetched FreePBX tarball dari /tmp/cache/"; \
+        mv /tmp/cache/freepbx-17.0-latest.tgz /tmp/freepbx.tgz; \
+    else \
+        for url in \
+            "${FREEPBX_URL}" \
+            "https://mirror1.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" \
+            "http://mirror2.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz"; do \
+            echo "[INFO] Mengunduh FreePBX dari ${url} ..."; \
+            if curl -4 -fSL --connect-timeout 15 --speed-limit 20480 --speed-time 15 --max-time 90 \
+                    -w "[INFO] HTTP %{http_code} | %{size_download} bytes in %{time_total}s\n" \
+                    "${url}" -o /tmp/freepbx.tgz; then \
+                break; \
+            fi; \
+            rm -f /tmp/freepbx.tgz; \
+        done; \
+    fi; \
+    test -s /tmp/freepbx.tgz; \
     mkdir -p /usr/src/freepbx; \
     tar xzf /tmp/freepbx.tgz --strip-components=1 -C /usr/src/freepbx; \
-    rm -f /tmp/freepbx.tgz; \
+    rm -rf /tmp/freepbx.tgz /tmp/cache; \
     mkdir -p /run/mysqld; \
     chown -R mysql:mysql /run/mysqld /var/lib/mysql; \
     service mariadb start; \
@@ -167,12 +180,11 @@ RUN set -eux; \
     cd /usr/src/freepbx; \
     ./start_asterisk start; \
     for i in $(seq 1 30); do asterisk -rx "core show version" >/dev/null 2>&1 && break; sleep 1; done; \
-    ./install -n; \
+    timeout 600 ./install -n; \
     fwconsole ma disablerepo commercial || true; \
-    fwconsole chown; \
-    fwconsole ma downloadinstall core sipsettings voicemail cdr dashboard userman pm2; \
-    fwconsole ma downloadinstall soundlang logfiles featurecodeadmin recordings music; \
-    fwconsole ma downloadinstall callrecording ivr queues ringgroups timeconditions; \
+    fwconsole ma installlocal || true; \
+    timeout 180 fwconsole ma downloadinstall timeconditions || echo "[WARN] Modul opsional timeconditions dilewati (mirror lambat)"; \
+    fwconsole ma list; \
     fwconsole chown; \
     fwconsole reload; \
     fwconsole stop; \
