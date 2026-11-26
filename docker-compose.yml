@@ -1,0 +1,27 @@
+services:
+  freepbx:
+    image: ltfnproject/freepbx:latest
+    container_name: freepbx
+    restart: unless-stopped
+    ports:
+      # Custom Port Web UI (ubah 8080 sesuai kebutuhan)
+      - "8080:80"
+      # Port SIP (PJSIP)
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      # Custom Rentang Port RTP (angka kiri & kanan wajib sama persis)
+      - "10000-10100:10000-10100/udp"
+    environment:
+      - TIMEZONE=Asia/Jakarta
+      # Aktifkan MariaDB internal (auto-seeding otomatis saat volume ./db kosong)
+      - DB_EMBEDDED=TRUE
+      # Samakan dengan rentang port RTP di atas
+      - RTP_START=10000
+      - RTP_FINISH=10100
+      # Nonaktifkan Fail2Ban bawaan agar jalan lancar tanpa mode privileged
+      - ENABLE_FAIL2BAN=FALSE
+      - ENABLE_SSL=FALSE
+    volumes:
+      - ./data:/data
+      - ./db:/var/lib/mysql
+      - ./logs:/var/log

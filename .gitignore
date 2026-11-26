@@ -1,0 +1,10 @@
+# Volume data lokal hasil testing
+data/
+db/
+logs/
+
+# File environment & sementara
+.env
+*.log
+.DS_Store
+Thumbs.db

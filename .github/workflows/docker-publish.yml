@@ -1,0 +1,198 @@
+name: Build, Test, and Publish FreePBX Docker Image
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Rebuild otomatis setiap tanggal 1 pukul 02:00 UTC (09:00 WIB)
+    # untuk menarik security backport Debian 12 (PHP 8.2, OpenSSL, MariaDB) & patch Asterisk 22 LTS
+    - cron: "0 2 1 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ltfnproject/freepbx
+  ASTERISK_MAJOR: "22"
+
+jobs:
+  build-test-push:
+    name: Build, Smoke Test & Push (linux/amd64)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=17-ast${{ env.ASTERISK_MAJOR }},enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Build Docker image locally for testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:ci-test
+          build-args: |
+            ASTERISK_MAJOR=${{ env.ASTERISK_MAJOR }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Show built image size
+        run: docker images ${{ env.IMAGE_NAME }}:ci-test
+
+      - name: Run Trivy vulnerability scan (report only)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:ci-test
+          format: table
+          exit-code: "0"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Run automated container smoke test
+        run: |
+          set -euo pipefail
+          SMOKE_DIR="/tmp/freepbx-smoke"
+          sudo rm -rf "${SMOKE_DIR}"
+          mkdir -p "${SMOKE_DIR}/data" "${SMOKE_DIR}/db" "${SMOKE_DIR}/logs"
+
+          echo "=== 1. Menjalankan container dengan volume kosong ==="
+          docker run -d \
+            --name freepbx-smoke \
+            -p 8080:80 \
+            -e TIMEZONE=Asia/Jakarta \
+            -e DB_EMBEDDED=TRUE \
+            -e RTP_START=10000 \
+            -e RTP_FINISH=10100 \
+            -e ENABLE_FAIL2BAN=FALSE \
+            -e ENABLE_SSL=FALSE \
+            -v "${SMOKE_DIR}/data:/data" \
+            -v "${SMOKE_DIR}/db:/var/lib/mysql" \
+            -v "${SMOKE_DIR}/logs:/var/log" \
+            "${IMAGE_NAME}:ci-test"
+
+          dump_logs() {
+            echo "=== CONTAINER LOGS ==="
+            docker logs freepbx-smoke || true
+          }
+          trap 'dump_logs; docker rm -f freepbx-smoke >/dev/null 2>&1 || true' ERR
+
+          echo "=== 2. Menunggu Web UI (8080) & Asterisk siap ==="
+          READY=0
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8080/ >/dev/null 2>&1 \
+               && docker exec freepbx-smoke asterisk -rx "core show version" 2>/dev/null | grep -q "Asterisk 22"; then
+              READY=1
+              echo "Container siap dalam ${i} detik."
+              break
+            fi
+            sleep 1
+          done
+          if [ "${READY}" -ne 1 ]; then
+            echo "[FAIL] Container tidak siap dalam 90 detik."
+            exit 1
+          fi
+
+          echo "=== 3. Verifikasi versi Asterisk 22 LTS ==="
+          AST_VER="$(docker exec freepbx-smoke asterisk -rx 'core show version')"
+          echo "${AST_VER}"
+          echo "${AST_VER}" | grep -q "Asterisk 22"
+
+          echo "=== 4. Verifikasi ODBC MariaDB untuk CDR ==="
+          ODBC_OUT="$(docker exec freepbx-smoke asterisk -rx 'odbc show')"
+          echo "${ODBC_OUT}"
+          echo "${ODBC_OUT}" | grep -qi "MySQL-asteriskcdrdb"
+
+          echo "=== 5. Verifikasi PM2 berjalan ==="
+          docker exec freepbx-smoke fwconsole pm2 --list
+
+          echo "=== 6. Verifikasi sinkronisasi RTP (DB & rtp_additional.conf) ==="
+          docker exec freepbx-smoke mysql -N -B asterisk -e "SELECT \`key\`, val FROM kvstore_Sipsettings WHERE \`key\` IN ('rtpstart','rtpend');" | tee /tmp/rtp_db.txt
+          grep -qE '^rtpstart[[:space:]]+10000$' /tmp/rtp_db.txt
+          grep -qE '^rtpend[[:space:]]+10100$' /tmp/rtp_db.txt
+          docker exec freepbx-smoke grep -q '^rtpstart=10000$' /etc/asterisk/rtp_additional.conf
+          docker exec freepbx-smoke grep -q '^rtpend=10100$' /etc/asterisk/rtp_additional.conf
+
+          echo "=== 7. Verifikasi persistence file penting (/data) ==="
+          sudo test -f "${SMOKE_DIR}/data/freepbx.conf"
+          sudo test -f "${SMOKE_DIR}/data/astdb/astdb.sqlite3"
+          sudo test -d "${SMOKE_DIR}/db/asterisk"
+
+          echo "=== 8. Uji kecepatan restart & persistence (< 45 detik) ==="
+          START_TS=$(date +%s)
+          docker restart freepbx-smoke
+          RESTART_OK=0
+          for i in $(seq 1 45); do
+            if curl -fsS http://127.0.0.1:8080/ >/dev/null 2>&1 \
+               && docker exec freepbx-smoke asterisk -rx "core show uptime" >/dev/null 2>&1; then
+              END_TS=$(date +%s)
+              echo "Restart selesai & sehat dalam $((END_TS - START_TS)) detik."
+              RESTART_OK=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "${RESTART_OK}" -ne 1 ]; then
+            echo "[FAIL] Container gagal sehat kembali setelah restart."
+            exit 1
+          fi
+
+          docker rm -f freepbx-smoke
+          sudo rm -rf "${SMOKE_DIR}"
+          echo "=== SEMUA SMOKE TEST LULUS ==="
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push verified image to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            ASTERISK_MAJOR=${{ env.ASTERISK_MAJOR }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+      - name: Sync README to Docker Hub description
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ env.IMAGE_NAME }}
+          readme-filepath: ./README.md
+          short-description: "All-in-One Pre-initialized FreePBX 17 + Asterisk 22 LTS + MariaDB on Debian 12"
