@@ -17,8 +17,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 
 WORKDIR /usr/src
 
-# Unduh source Asterisk 22 LTS terbaru
-RUN curl -fsSL "https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-${ASTERISK_MAJOR}-current.tar.gz" \
+# Unduh source Asterisk 22 LTS terbaru (dengan timeout & retry agar tidak hang jika mirror lambat)
+RUN curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 300 \
+        --retry 4 --retry-delay 5 --retry-all-errors \
+        "https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-${ASTERISK_MAJOR}-current.tar.gz" \
         -o asterisk.tar.gz \
     && mkdir -p /usr/src/asterisk \
     && tar xzf asterisk.tar.gz --strip-components=1 -C /usr/src/asterisk \
@@ -60,7 +62,7 @@ RUN set -eux; \
 # ==============================================================================
 FROM debian:12-slim AS runtime
 
-ARG FREEPBX_URL=http://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz
+ARG FREEPBX_URL=https://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz
 
 LABEL org.opencontainers.image.title="FreePBX 17 + Asterisk 22 LTS + MariaDB (All-in-One)" \
       org.opencontainers.image.description="Pre-initialized All-in-One FreePBX 17 Stable + Asterisk 22 LTS + Embedded MariaDB on Debian 12" \
@@ -147,7 +149,14 @@ RUN set -eux; \
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends build-essential git; \
-    curl -fsSL "${FREEPBX_URL}" -o /tmp/freepbx.tgz; \
+    curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 240 \
+        --retry 3 --retry-delay 5 --retry-all-errors "${FREEPBX_URL}" -o /tmp/freepbx.tgz \
+    || curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 240 \
+        --retry 3 --retry-delay 5 --retry-all-errors \
+        "https://mirror1.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" -o /tmp/freepbx.tgz \
+    || curl -4 -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 240 \
+        --retry 3 --retry-delay 5 --retry-all-errors \
+        "http://mirror2.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" -o /tmp/freepbx.tgz; \
     mkdir -p /usr/src/freepbx; \
     tar xzf /tmp/freepbx.tgz --strip-components=1 -C /usr/src/freepbx; \
     rm -f /tmp/freepbx.tgz; \

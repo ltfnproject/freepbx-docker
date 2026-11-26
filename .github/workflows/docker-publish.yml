@@ -27,6 +27,7 @@ jobs:
   build-test-push:
     name: Build, Smoke Test & Push (linux/amd64)
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     permissions:
       contents: read
 
