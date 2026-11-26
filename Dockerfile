@@ -180,7 +180,11 @@ RUN set -eux; \
     cd /usr/src/freepbx; \
     ./start_asterisk start; \
     for i in $(seq 1 30); do asterisk -rx "core show version" >/dev/null 2>&1 && break; sleep 1; done; \
-    timeout 600 ./install -n; \
+    timeout 600 ./install -n 2>&1 | tee /tmp/freepbx-install.log; \
+    grep -q "You have successfully installed FreePBX" /tmp/freepbx-install.log; \
+    test -f /etc/freepbx.conf; \
+    test -x /usr/sbin/fwconsole; \
+    rm -f /tmp/freepbx-install.log; \
     fwconsole ma disablerepo commercial || true; \
     fwconsole ma installlocal || true; \
     timeout 180 fwconsole ma downloadinstall timeconditions || echo "[WARN] Modul opsional timeconditions dilewati (mirror lambat)"; \
@@ -189,7 +193,7 @@ RUN set -eux; \
     fwconsole reload; \
     fwconsole stop; \
     service mariadb stop; \
-    mkdir -p /opt/init/astdb; \
+    mkdir -p /opt/init/astdb /var/lib/asterisk/keys /var/lib/asterisk/moh /var/lib/asterisk/sounds/custom; \
     if [ -f /var/lib/asterisk/astdb.sqlite3 ]; then \
         mv /var/lib/asterisk/astdb.sqlite3 /opt/init/astdb/astdb.sqlite3; \
     fi; \

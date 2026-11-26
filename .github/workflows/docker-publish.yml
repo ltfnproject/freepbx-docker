@@ -165,8 +165,8 @@ jobs:
           docker exec freepbx-smoke mysql -N -B asterisk -e "SELECT \`key\`, val FROM kvstore_Sipsettings WHERE \`key\` IN ('rtpstart','rtpend');" | tee /tmp/rtp_db.txt
           grep -qE '^rtpstart[[:space:]]+10000$' /tmp/rtp_db.txt
           grep -qE '^rtpend[[:space:]]+10100$' /tmp/rtp_db.txt
-          docker exec freepbx-smoke grep -q '^rtpstart=10000$' /etc/asterisk/rtp_additional.conf
-          docker exec freepbx-smoke grep -q '^rtpend=10100$' /etc/asterisk/rtp_additional.conf
+          docker exec freepbx-smoke grep -Eq '^[[:space:]]*rtpstart[[:space:]]*=[[:space:]]*10000$' /etc/asterisk/rtp_additional.conf
+          docker exec freepbx-smoke grep -Eq '^[[:space:]]*rtpend[[:space:]]*=[[:space:]]*10100$' /etc/asterisk/rtp_additional.conf
 
           echo "=== 7. Verifikasi persistence file penting (/data) ==="
           sudo test -f "${SMOKE_DIR}/data/freepbx.conf"

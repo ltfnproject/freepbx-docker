@@ -110,8 +110,8 @@ if [ "${DB_EMBEDDED^^}" = "TRUE" ]; then
 fi
 
 if [ -f /etc/asterisk/rtp_additional.conf ]; then
-    sed -i "s/^rtpstart=.*/rtpstart=${RTP_START}/" /etc/asterisk/rtp_additional.conf || true
-    sed -i "s/^rtpend=.*/rtpend=${RTP_FINISH}/" /etc/asterisk/rtp_additional.conf || true
+    sed -i -E "s/^[[:space:]]*rtpstart[[:space:]]*=.*/rtpstart=${RTP_START}/" /etc/asterisk/rtp_additional.conf || true
+    sed -i -E "s/^[[:space:]]*rtpend[[:space:]]*=.*/rtpend=${RTP_FINISH}/" /etc/asterisk/rtp_additional.conf || true
 fi
 
 # 6. Konfigurasi SSL & Fail2Ban opsional
@@ -134,8 +134,8 @@ fwconsole reload || true
 
 # Pastikan rtp_additional.conf tetap sinkron setelah reload
 if [ -f /etc/asterisk/rtp_additional.conf ]; then
-    sed -i "s/^rtpstart=.*/rtpstart=${RTP_START}/" /etc/asterisk/rtp_additional.conf || true
-    sed -i "s/^rtpend=.*/rtpend=${RTP_FINISH}/" /etc/asterisk/rtp_additional.conf || true
+    sed -i -E "s/^[[:space:]]*rtpstart[[:space:]]*=.*/rtpstart=${RTP_START}/" /etc/asterisk/rtp_additional.conf || true
+    sed -i -E "s/^[[:space:]]*rtpend[[:space:]]*=.*/rtpend=${RTP_FINISH}/" /etc/asterisk/rtp_additional.conf || true
     asterisk -rx "module reload res_rtp_asterisk.so" >/dev/null 2>&1 || true
 fi
 
