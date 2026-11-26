@@ -1,28 +1,39 @@
 # FreePBX 17 + Asterisk 22 LTS + MariaDB (All-in-One Docker)
 
-Image Docker mandiri (*pre-initialized*) **FreePBX 17 Stable + Asterisk 22 LTS + MariaDB** berbasis **Debian 12 (Bookworm)** yang dirancang agar mudah, ringan, dan cepat dijalankan (startup ~10–20 detik) menggunakan `docker-compose.yml` sederhana—ideal untuk **praktikum VoIP / TLJ SMK** maupun deployment server PBX lokal.
+[![Build, Test, and Publish](https://github.com/ltfnproject/freepbx-docker/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/ltfnproject/freepbx-docker/actions/workflows/docker-publish.yml)
+[![Docker Hub](https://img.shields.io/docker/v/ltfnproject/freepbx?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/ltfnproject/freepbx)
+[![Docker Image Size](https://img.shields.io/docker/image-size/ltfnproject/freepbx/latest)](https://hub.docker.com/r/ltfnproject/freepbx)
 
-- **Docker Hub:** [ltfnproject/freepbx](https://hub.docker.com/r/ltfnproject/freepbx)
-- **Source Repository:** [github.com/ltfnproject/freepbx-docker](https://github.com/ltfnproject/freepbx-docker)
-- **Arsitektur:** `linux/amd64` (dikompilasi dengan `--disable BUILD_NATIVE`, aman untuk PC lab, VirtualBox, VMware, & Proxmox)
+Image Docker mandiri (*pre-initialized*) **FreePBX 17 Stable + Asterisk 22 LTS + MariaDB (embedded)** berbasis **Debian 12 (Bookworm)** yang siap pakai dan ringan (~486 MB terkompresi). Dirancang agar mudah dijalankan dengan satu file `docker-compose.yml` sederhana dan waktu startup cepat (**~10–20 detik**) tanpa menunggu instalasi modul/database saat *first boot*—cocok untuk **praktikum VoIP / jaringan, lab simulasi, maupun server PBX lokal**.
+
+- **Docker Hub:** [hub.docker.com/r/ltfnproject/freepbx](https://hub.docker.com/r/ltfnproject/freepbx)
+- **Source Code:** [github.com/ltfnproject/freepbx-docker](https://github.com/ltfnproject/freepbx-docker)
+- **Arsitektur:** `linux/amd64` *(dikompilasi dengan `--disable BUILD_NATIVE`, kompatibel untuk PC, laptop, VirtualBox, VMware, Proxmox, dan server Linux)*
 
 ---
 
-## Fitur & Komponen Utama
+## Komponen & Fitur Utama
 
 | Komponen | Versi | Keterangan |
 | :--- | :--- | :--- |
-| **OS Base** | Debian 12 Slim (Bookworm) | Patch keamanan LTS Debian hingga Juni 2028 |
-| **Telephony Engine** | Asterisk 22 LTS | PJSIP, MP3 (`format_mp3`), ODBC CDR, SRTP, suara EN ULAW/ALAW & MOH |
-| **Web Admin PBX** | FreePBX 17 Stable | Modul inti & telephony lengkap siap pakai (`core`, `sipsettings`, `voicemail`, `cdr`, `dashboard`, `userman`, `pm2`, `recordings`, `music`, `ivr`, `queues`, `ringgroups`, `timeconditions`, `callrecording`, `soundlang`, `logfiles`, `featurecodeadmin`) |
-| **Web & Runtime** | Apache2 + PHP 8.2 + Node.js | Hardening `php.ini` & Apache2 bawaan, kompatibel penuh FreePBX 17 |
+| **Base OS** | Debian 12 Slim (Bookworm) | Patch keamanan LTS Debian hingga Juni 2028 |
+| **Telephony Engine** | Asterisk 22 LTS | PJSIP, `format_mp3`, ODBC CDR (`res_odbc`, `cdr_adaptive_odbc`), SRTP, suara EN ULAW/ALAW & MOH |
+| **Web Admin PBX** | FreePBX 17 Stable | 31+ modul siap pakai (`core`, `sipsettings`, `voicemail`, `cdr`, `cel`, `dashboard`, `userman`, `pm2`, `ucp`, `recordings`, `music`, `ivr`, `queues`, `ringgroups`, `callrecording`, `conferences`, `backup`, `soundlang`, `logfiles`, `featurecodeadmin`, `timeconditions`, dll.) |
+| **Web & Runtime** | Apache2 + PHP 8.2 + Node.js | Hardening `php.ini` & Apache2 bawaan, sinkronisasi `date.timezone` otomatis |
 | **Database** | MariaDB 10.11 (Embedded) | *Auto-seeding* otomatis dari `/opt/init` saat volume host masih kosong |
 
 ---
 
-## Quick Start (Deploy Cepat di Debian Lokal)
+## Tag yang Tersedia
 
-1. Buat folder proyek dan file `docker-compose.yml`:
+- `ltfnproject/freepbx:latest` — Rilis terbaru dari branch `main`
+- `ltfnproject/freepbx:17-ast22` — FreePBX 17 Stable + Asterisk 22 LTS
+
+---
+
+## Quick Start (Docker Compose)
+
+1. Buat file `docker-compose.yml`:
 
 ```yaml
 services:
@@ -59,9 +70,11 @@ docker compose logs -f freepbx
 ```
 
 3. Akses Web UI FreePBX di browser:
-   - Buka `http://<IP-SERVER-DEBIAN>:8080`
-   - Buat akun Admin FreePBX pada halaman awal.
-   - Cek **Settings -> Asterisk SIP Settings -> General SIP Settings** -> pastikan **RTP Port Ranges** otomatis bernilai `10000` – `10100`, lalu sesuaikan **Local Networks** / **External Address** sesuai jaringan lab.
+   - Buka `http://<IP-SERVER>:8080`
+   - Buat akun Admin FreePBX pada halaman *initial setup*.
+   - Masuk ke **Settings → Asterisk SIP Settings → General SIP Settings**:
+     - Pastikan **RTP Port Ranges** otomatis bernilai `10000` – `10100`.
+     - Sesuaikan **Local Networks** dan **External Address** sesuai topologi jaringan Anda.
 
 ---
 
@@ -69,20 +82,20 @@ docker compose logs -f freepbx
 
 | Variable | Default | Deskripsi |
 | :--- | :--- | :--- |
-| `TIMEZONE` | `Asia/Jakarta` | Mengatur timezone sistem & `date.timezone` PHP. |
-| `DB_EMBEDDED` | `TRUE` | Menjalankan MariaDB internal dan *auto-seeding* jika `./db` masih kosong. |
-| `RTP_START` | `10000` | Batas bawah port RTP UDP (disinkronkan ke DB `kvstore_Sipsettings` & `rtp_additional.conf`). |
-| `RTP_FINISH` | `10100` | Batas atas port RTP UDP (disarankan rentang 100 port di mode bridge agar RAM `docker-proxy` ringan). |
-| `ENABLE_FAIL2BAN` | `FALSE` | Aktifkan `TRUE` jika ingin menjalankan Fail2Ban internal (memerlukan capability jaringan tambahan). |
-| `ENABLE_SSL` | `FALSE` | Aktifkan `TRUE` untuk menyalakan HTTPS `default-ssl` Apache2 & cookie PHP `secure`. |
+| `TIMEZONE` | `Asia/Jakarta` | Mengatur timezone sistem (`/etc/localtime`) dan `date.timezone` PHP. |
+| `DB_EMBEDDED` | `TRUE` | Menjalankan MariaDB internal dan *auto-seeding* otomatis bila `./db` masih kosong. |
+| `RTP_START` | `10000` | Batas bawah port RTP UDP (disinkronkan otomatis ke `kvstore_Sipsettings` & `rtp_additional.conf`). |
+| `RTP_FINISH` | `10100` | Batas atas port RTP UDP. *(Tips: hindari rentang terlalu lebar seperti `10000-20000` pada Docker mode bridge karena `docker-proxy` akan memakan RAM besar; rentang 100 port cukup untuk ±50 panggilan bersamaan.)* |
+| `ENABLE_FAIL2BAN` | `FALSE` | Ubah ke `TRUE` untuk menyalakan Fail2Ban internal *(membutuhkan capability jaringan tambahan)*. |
+| `ENABLE_SSL` | `FALSE` | Ubah ke `TRUE` untuk mengaktifkan HTTPS `default-ssl` Apache2 & cookie PHP `secure`. |
 
 ---
 
-## Volume Persisten (Tahan Upgrade Image)
+## Volume Persisten (Aman Saat Upgrade Image)
 
-| Mount Host | Path Container | Isi |
+| Mount Host | Path Container | Data yang Disimpan |
 | :--- | :--- | :--- |
-| `./data` | `/data` | Konfigurasi `/etc/asterisk`, spool voicemail/rekaman, `/etc/freepbx.conf`, AstDB (`astdb.sqlite3`), sertifikat (`keys`), MOH, custom sounds, dan backups |
+| `./data` | `/data` | Konfigurasi `/etc/asterisk`, spool voicemail & rekaman, `/etc/freepbx.conf`, AstDB (`astdb.sqlite3`), sertifikat (`keys`), *Music on Hold* (`moh`), *custom sounds*, dan *backups* |
 | `./db` | `/var/lib/mysql` | Database persisten MariaDB (`asterisk` & `asteriskcdrdb`) |
 | `./logs` | `/var/log` | Log Apache2, Asterisk, MariaDB, dan Fail2Ban |
 
@@ -91,19 +104,19 @@ docker compose logs -f freepbx
 ## Perintah Verifikasi Cepat
 
 ```bash
-# Cek status health container
+# Cek status container & healthcheck
 docker ps
 
 # Cek versi Asterisk aktif
 docker exec freepbx asterisk -rx "core show version"
 
-# Cek koneksi ODBC CDR MariaDB
+# Cek koneksi ODBC CDR ke MariaDB
 docker exec freepbx asterisk -rx "odbc show"
 
-# Cek proses PM2
+# Cek layanan PM2
 docker exec freepbx fwconsole pm2 --list
 
-# Masuk ke CLI Asterisk
+# Masuk ke CLI Asterisk untuk monitoring panggilan
 docker exec -it freepbx asterisk -rvvv
 ```
 
@@ -111,17 +124,6 @@ docker exec -it freepbx asterisk -rvvv
 
 ## Catatan Keamanan
 
-- Image ini menggunakan paket **PHP 8.2 resmi Debian 12** yang menerima *security backport* CVE melalui repositori `bookworm-security` (didukung Debian 12 LTS hingga Juni 2028) serta telah dilengkapi *hardening* Apache2 dan `php.ini`.
-- Image di-rebuild secara berkala setiap bulan melalui GitHub Actions untuk memasukkan patch keamanan sistem terbaru.
-- Untuk deployment produksi maupun lab, letakkan server di balik firewall jaringan lokal dan hindari mengekspos port Web Admin (`8080`) secara langsung ke internet publik tanpa VPN/pembatasan IP.
-
----
-
-## Panduan Maintainer: Publish Otomatis ke Docker Hub (`ltfnproject/freepbx`)
-
-1. Buat repository publik di GitHub dan push seluruh isi folder ini ke branch `main`.
-2. Di Docker Hub (**Account Settings -> Personal Access Tokens**), buat token baru dengan izin **Read & Write**.
-3. Di repository GitHub, buka **Settings -> Secrets and variables -> Actions -> New repository secret**, lalu tambahkan:
-   - `DOCKERHUB_USERNAME` = `ltfnproject`
-   - `DOCKERHUB_TOKEN` = *(token dari langkah 2)*
-4. Setiap `git push` ke `main`, pembuatan tag versi (misal `git tag v1.0.0 && git push origin v1.0.0`), atau tombol **Run workflow** di tab **Actions** akan otomatis melakukan **Build -> Trivy Security Scan -> Smoke Test Container -> Push ke `ltfnproject/freepbx` -> Sync README**.
+- Menggunakan paket **PHP 8.2 resmi Debian 12** yang menerima *security backport* CVE dari repositori `bookworm-security` (didukung Debian 12 LTS hingga Juni 2028) serta telah dilengkapi *hardening* Apache2 dan `php.ini`.
+- Image diperbarui secara berkala untuk menyertakan patch keamanan sistem terbaru dan diverifikasi dengan *automated smoke test* sebelum dirilis.
+- Disarankan menjalankan server PBX di balik firewall jaringan lokal/VPN dan tidak mengekspos port Web Admin (`8080`) secara terbuka ke internet publik.
