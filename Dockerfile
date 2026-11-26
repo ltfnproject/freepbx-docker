@@ -47,6 +47,8 @@ RUN set -eux; \
     mkdir -p /tmp/asterisk-install; \
     make DESTDIR=/tmp/asterisk-install install; \
     make DESTDIR=/tmp/asterisk-install samples; \
+    mkdir -p /tmp/asterisk-install/var/log/asterisk /tmp/asterisk-install/var/spool/asterisk /tmp/asterisk-install/var/lib/asterisk; \
+    rm -rf /tmp/asterisk-install/var/run; \
     test -f /tmp/asterisk-install/usr/lib/asterisk/modules/format_mp3.so; \
     test -f /tmp/asterisk-install/usr/lib/asterisk/modules/res_odbc.so; \
     test -f /tmp/asterisk-install/usr/lib/asterisk/modules/cdr_adaptive_odbc.so; \
@@ -85,14 +87,18 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 # 2. Buat user & home directory asterisk (penting untuk PM2 dan Apache)
 RUN useradd -m -d /home/asterisk -s /bin/bash asterisk
 
-# 3. Salin hasil kompilasi Asterisk 22 LTS dari Stage 1 dan verifikasi library runtime
-COPY --from=asterisk-builder /tmp/asterisk-install /
+# 3. Salin hasil kompilasi Asterisk 22 LTS dari Stage 1 (salin direktori spesifik agar tidak menimpa symlink /var/run -> /run)
+COPY --from=asterisk-builder /tmp/asterisk-install/usr /usr
+COPY --from=asterisk-builder /tmp/asterisk-install/etc/asterisk /etc/asterisk
+COPY --from=asterisk-builder /tmp/asterisk-install/var/lib/asterisk /var/lib/asterisk
+COPY --from=asterisk-builder /tmp/asterisk-install/var/spool/asterisk /var/spool/asterisk
+COPY --from=asterisk-builder /tmp/asterisk-install/var/log/asterisk /var/log/asterisk
 RUN ldconfig \
     && asterisk -V \
-    && mkdir -p /var/run/asterisk /var/log/asterisk /var/spool/asterisk \
+    && mkdir -p /run/asterisk /var/log/asterisk /var/spool/asterisk \
                 /var/lib/asterisk/sounds/custom /var/lib/asterisk/keys /var/lib/asterisk/moh \
     && chown -R asterisk:asterisk /etc/asterisk /var/lib/asterisk /var/log/asterisk \
-                /var/spool/asterisk /var/run/asterisk /usr/lib/asterisk /home/asterisk
+                /var/spool/asterisk /run/asterisk /usr/lib/asterisk /home/asterisk
 
 # 4. Konfigurasi & Hardening Apache2 + PHP 8.2 (kompatibel penuh dengan FreePBX 17)
 RUN set -eux; \
