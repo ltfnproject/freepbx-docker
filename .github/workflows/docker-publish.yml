@@ -27,7 +27,7 @@ jobs:
   build-test-push:
     name: Build, Smoke Test & Push (linux/amd64)
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
 
@@ -35,18 +35,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Pre-fetch FreePBX 17 tarball on runner (fast-fail mirror check)
+      - name: Get current month key for FreePBX tarball cache
+        id: cache-month
+        run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached FreePBX 17 tarball
+        id: freepbx-cache
+        uses: actions/cache@v6
+        with:
+          path: cache/freepbx-17.0-latest.tgz
+          key: freepbx-17-tarball-${{ steps.cache-month.outputs.month }}
+          restore-keys: |
+            freepbx-17-tarball-
+
+      - name: Pre-fetch FreePBX 17 tarball on runner (if not cached)
         run: |
           set -euo pipefail
           mkdir -p cache
+          if [ -s cache/freepbx-17.0-latest.tgz ] && tar -tzf cache/freepbx-17.0-latest.tgz >/dev/null 2>&1; then
+            echo "OK: Menggunakan tarball FreePBX 17 dari GitHub Actions cache ($(du -h cache/freepbx-17.0-latest.tgz | awk '{print $1}'))"
+            exit 0
+          fi
+          rm -f cache/freepbx-17.0-latest.tgz
           DOWNLOADED=0
           for url in \
             "https://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" \
             "https://mirror1.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" \
             "http://mirror2.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz" \
             "http://mirror.freepbx.org/modules/packages/freepbx/freepbx-17.0-latest.tgz"; do
-            echo "=== Mencoba unduh dari ${url} ==="
-            if curl -4 -fSL --connect-timeout 10 --speed-limit 20480 --speed-time 15 --max-time 60 \
+            echo "=== Mencoba unduh dari ${url} (max 15 menit jika mirror di-throttle ~65 KB/s) ==="
+            if curl -4 -fSL --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 900 \
                     -w "HTTP %{http_code} | %{size_download} bytes in %{time_total}s (%{speed_download} B/s)\n" \
                     "${url}" -o cache/freepbx-17.0-latest.tgz; then
               if tar -tzf cache/freepbx-17.0-latest.tgz >/dev/null 2>&1; then
@@ -55,11 +73,11 @@ jobs:
                 break
               fi
             fi
-            echo "WARN: Gagal atau terlalu lambat dari ${url}, lanjut ke mirror berikutnya..."
+            echo "WARN: Gagal dari ${url}, lanjut ke mirror berikutnya..."
             rm -f cache/freepbx-17.0-latest.tgz
           done
           if [ "${DOWNLOADED}" -ne 1 ]; then
-            echo "ERROR: Semua mirror FreePBX gagal dijangkau atau terlalu lambat dari runner."
+            echo "ERROR: Semua mirror FreePBX gagal dijangkau dari runner."
             exit 1
           fi
 
