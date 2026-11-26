@@ -33,7 +33,16 @@ Image Docker mandiri (*pre-initialized*) **FreePBX 17 Stable + Asterisk 22 LTS +
 
 ## Quick Start (Docker Compose)
 
-1. Buat file `docker-compose.yml`:
+1. Buat direktori proyek beserta folder volume (*bind mount*) untuk data persisten:
+
+```bash
+mkdir -p freepbx/{data,db,logs}
+cd freepbx
+```
+
+*(Catatan: Meskipun Docker modern bisa membuat folder bind mount secara otomatis, membuatnya terlebih dahulu dengan `mkdir -p` disarankan agar struktur folder rapi dan kompatibel di semua versi Docker.)*
+
+2. Buat file `docker-compose.yml` di dalam folder `freepbx/`:
 
 ```yaml
 services:
@@ -62,14 +71,14 @@ services:
       - ./logs:/var/log
 ```
 
-2. Jalankan kontainer:
+3. Jalankan kontainer:
 
 ```bash
 docker compose up -d
 docker compose logs -f freepbx
 ```
 
-3. Akses Web UI FreePBX di browser:
+4. Akses Web UI FreePBX di browser:
    - Buka `http://<IP-SERVER>:8080`
    - Buat akun Admin FreePBX pada halaman *initial setup*.
    - Masuk ke **Settings → Asterisk SIP Settings → General SIP Settings**:
