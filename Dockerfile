@@ -143,7 +143,10 @@ RUN set -eux; \
         > /etc/odbc.ini
 
 # 6. Unduh & instal FreePBX 17 Stable + modul lengkap + pindahkan state awal ke /opt/init dalam satu layer
+# Catatan: build-essential & git dipasang sementara agar modul node-gyp (ucp/pm2) terinstal mulus, lalu dihapus di layer yang sama
 RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends build-essential git; \
     curl -fsSL "${FREEPBX_URL}" -o /tmp/freepbx.tgz; \
     mkdir -p /usr/src/freepbx; \
     tar xzf /tmp/freepbx.tgz --strip-components=1 -C /usr/src/freepbx; \
@@ -183,7 +186,9 @@ RUN set -eux; \
     mv /var/lib/asterisk/sounds/custom /opt/init/sounds-custom; \
     mkdir -p /var/lib/mysql /etc/asterisk /var/spool/asterisk \
              /var/lib/asterisk/keys /var/lib/asterisk/moh /var/lib/asterisk/sounds/custom; \
-    rm -rf /usr/src/freepbx /tmp/* /var/tmp/* /root/.npm /home/asterisk/.npm \
+    apt-get purge -y --auto-remove build-essential git; \
+    asterisk -V; \
+    rm -rf /var/lib/apt/lists/* /usr/src/freepbx /tmp/* /var/tmp/* /root/.npm /home/asterisk/.npm \
            /var/log/asterisk/* /var/log/mysql/* /var/log/apache2/*
 
 # 7. Pasang skrip entrypoint dengan jaminan line ending LF
