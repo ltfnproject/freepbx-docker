@@ -83,7 +83,10 @@ docker compose logs -f freepbx
    - Buat akun Admin FreePBX pada halaman *initial setup*.
    - Masuk ke **Settings → Asterisk SIP Settings → General SIP Settings**:
      - Pastikan **RTP Port Ranges** otomatis bernilai `10000` – `10100`.
-     - Sesuaikan **Local Networks** dan **External Address** sesuai topologi jaringan Anda.
+     - **Pengaturan NAT (Penting untuk mode Docker Bridge agar tidak *no audio / one-way audio*):**
+       - **External Address:** isi dengan **IP Host Server** tempat Docker berjalan (contoh: `192.168.1.10`).
+       - **Local Networks:** isi **hanya subnet internal Docker** (`172.16.0.0/12`) — jangan masukkan subnet LAN klien agar Asterisk selalu mengiklankan IP Host Server (bukan IP internal kontainer `172.x.x.x`) ke softphone/IP Phone klien.
+     - Klik **Submit → Apply Config**, lalu jalankan `docker compose restart freepbx` satu kali agar konfigurasi transport PJSIP baru aktif sepenuhnya.
 
 ---
 
