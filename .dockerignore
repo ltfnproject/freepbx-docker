@@ -2,7 +2,7 @@
 .github
 .gitignore
 .gitattributes
-README.md
+README*.md
 docker-compose.yml
 data
 db
